@@ -3,6 +3,24 @@ DerivedData/
 *.xcworkspace
 *.xcuserstate
 *.xcuserdata
-*.xcodeproj/project.xcworkspace/xcuserdata
+*.xcodeproj/project.xcworkspace/
 *.xcodeproj/xcuserdata/
+
+# Swift Packages
+.build/
+.swiftpm/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Binaries
+*.o
+*.pyc
+*.swp
+
+# Secrets
+*.env
 
