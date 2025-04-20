@@ -1,19 +1,13 @@
-//
-//  GameListView.swift
-//  GUtility
-//
-//  Created by David Torres on 4/19/25.
-//
-
 import SwiftUI
 import SwiftData
 
 struct GameListView: View {
-    @State private var expandedSessionIDs: Set<PersistentIdentifier> = []
     @Environment(\.modelContext) private var modelContext
     @Query private var games: [Game]
 
     @State private var expandedGameIDs: Set<PersistentIdentifier> = []
+    @State private var expandedSessionIDs: Set<PersistentIdentifier> = []
+    @State private var newPlayerNames: [PersistentIdentifier: String] = [:]
 
     var body: some View {
         NavigationSplitView {
@@ -32,14 +26,57 @@ struct GameListView: View {
                                 }
                             )
                         ) {
-                            playerSummarySection(for: game)
+                            PlayerSummaryView(
+                                game: game,
+                                newPlayerName: Binding(
+                                    get: { newPlayerNames[game.id, default: ""] },
+                                    set: { newPlayerNames[game.id] = $0 }
+                                ),
+                                expandedSessionIDs: $expandedSessionIDs,
+                                onAddPlayer: { name in
+                                    let newPlayer = Player(name: name)
+                                    game.players.append(newPlayer)
+                                    modelContext.insert(newPlayer)
+                                    newPlayerNames[game.id] = ""
+                                },
+                                onAddSession: {
+                                    let newScores = game.players.map { player in
+                                        let score = ScoreEntry(player: player, score: 0)
+                                        modelContext.insert(score)
+                                        return score
+                                    }
+                                    let newSession = GameSession(
+                                        name: "Session - \(Date().formatted(date: .abbreviated, time: .shortened))",
+                                        scores: newScores
+                                    )
+                                    game.sessions.append(newSession)
+                                    modelContext.insert(newSession)
+                                    expandedSessionIDs.insert(newSession.id)
+                                },
+                                onDeleteSession: { session in
+                                    if let gameIndex = games.firstIndex(where: { $0.id == game.id }),
+                                       let sessionIndex = games[gameIndex].sessions.firstIndex(where: { $0.id == session.id }) {
+                                        games[gameIndex].sessions.remove(at: sessionIndex)
+                                        modelContext.delete(session)
+                                        expandedSessionIDs.remove(session.id)
+                                    }
+                                }
+                            )
                         } label: {
                             Text(game.name)
                                 .font(.headline)
                         }
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                if let index = games.firstIndex(where: { $0.id == game.id }) {
+                                    modelContext.delete(games[index])
+                                }
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
                     }
                 }
-                .onDelete(perform: deleteGames)
             }
             .navigationTitle("Games")
             .toolbar {
@@ -57,74 +94,6 @@ struct GameListView: View {
         }
     }
 
-    private func playerSummarySection(for game: Game) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            // Player totals
-            ForEach(game.players) { player in
-                let totalScore = totalScore(for: player, in: game)
-
-                HStack {
-                    Text(player.name)
-                    Spacer()
-                    Text("\(totalScore)")
-                }
-                .font(.subheadline)
-            }
-
-            // Add session button
-            NavigationLink(destination: AddGameSessionView(game: game)) {
-                Label("Add Session", systemImage: "plus.circle")
-            }
-            .font(.subheadline)
-            .padding(.top, 8)
-
-            // Past sessions
-            if !game.sessions.isEmpty {
-                Text("Past Sessions:")
-                    .font(.subheadline)
-                    .padding(.top, 8)
-
-                ForEach(game.sessions.sorted(by: { $0.date > $1.date })) { session in
-                    DisclosureGroup(
-                        isExpanded: Binding(
-                            get: { expandedSessionIDs.contains(session.id) },
-                            set: { isExpanded in
-                                if isExpanded {
-                                    expandedSessionIDs.insert(session.id)
-                                } else {
-                                    expandedSessionIDs.remove(session.id)
-                                }
-                            }
-                        )
-                    ) {
-                        ForEach(session.scores) { score in
-                            HStack {
-                                Text("- \(score.player.name)")
-                                Spacer()
-                                Text("\(score.score)")
-                            }
-                            .font(.caption)
-                        }
-                    } label: {
-                        NavigationLink(destination: EditGameSessionView(session: session)) {
-                            Text(session.date.formatted(date: .long, time: .omitted))
-                                .font(.subheadline)
-                                .padding(.vertical, 4)
-                                .padding(.horizontal, 8)
-                                .background(Color.blue.opacity(0.1))
-                                .cornerRadius(8)
-                        }
-                        .padding(.top, 4)
-                    }
-                }
-            }
-        }
-        .padding(.top, 4)
-        .onAppear {
-            // Auto-expand latest session could be placed here
-        }
-        }
-
     private func addGame() {
         withAnimation {
             let newGame = Game(name: "New Game")
@@ -138,14 +107,6 @@ struct GameListView: View {
                 modelContext.delete(games[index])
             }
         }
-    }
-
-    private func totalScore(for player: Player, in game: Game) -> Int {
-        game.sessions
-            .flatMap { $0.scores }
-            .filter { $0.player.name == player.name }
-            .map { $0.score }
-            .reduce(0, +)
     }
 }
 

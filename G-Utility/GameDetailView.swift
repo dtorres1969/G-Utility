@@ -1,76 +1,51 @@
-//
-//  GameDetailView.swift
-//  GUtility
-//
-//  Created by David Torres on 4/19/25.
-//
-
 import SwiftUI
 import SwiftData
 
 struct GameDetailView: View {
     @Bindable var game: Game
     @Environment(\.modelContext) private var modelContext
-    @State private var isEditingName = false
 
-@State private var newPlayerName = ""
+    @State private var newPlayerName: String = ""
+    @State private var expandedSessionIDs: Set<PersistentIdentifier> = []
 
-var body: some View {
-        Form {
-            Section(header: Text("Players")) {
-                ForEach(game.players) { player in
-                    Text(player.name)
+    var body: some View {
+        PlayerSummaryView(
+            game: game,
+            newPlayerName: $newPlayerName,
+            expandedSessionIDs: $expandedSessionIDs,
+            onAddPlayer: { name in
+                let newPlayer = Player(name: name)
+                game.players.append(newPlayer)
+                modelContext.insert(newPlayer)
+                newPlayerName = ""
+            },
+            onAddSession: {
+                guard !game.players.isEmpty else { return }
+
+                let newScores = game.players.map { player in
+                    let score = ScoreEntry(player: player, score: 0)
+                    modelContext.insert(score)
+                    return score
                 }
 
-HStack {
-                    TextField("Add Player", text: $newPlayerName)
-                    Button("Add") {
-                        addPlayer()
-                    }
-                    .disabled(newPlayerName.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            }
+                let newSession = GameSession(
+                    name: "Session - \(Date().formatted(date: .abbreviated, time: .shortened))",
+                    scores: newScores
+                )
 
-Section(header: Text("Sessions")) {
-                NavigationLink("View Sessions") {
-                    GameSessionListView(game: game)
-                }
-            }
-        }
-        .navigationTitle(game.name) // fallback title
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                if isEditingName {
-                    TextField("Game Name", text: $game.name)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 250)
-                        .onSubmit {
-                            isEditingName = false
-                        }
-                } else {
-                    Text(game.name)
-                        .font(.headline)
-                        .onTapGesture {
-                            isEditingName = true
-                        }
+                game.sessions.append(newSession)
+                modelContext.insert(newSession)
+                expandedSessionIDs.insert(newSession.id)
+            },
+            onDeleteSession: { session in
+                if let index = game.sessions.firstIndex(where: { $0.id == session.id }) {
+                    game.sessions.remove(at: index)
+                    modelContext.delete(session)
+                    expandedSessionIDs.remove(session.id)
                 }
             }
-        }
-
-}
-
-private func addPlayer() {
-        let trimmed = newPlayerName.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
-
-let newPlayer = Player(name: trimmed)
-        game.players.append(newPlayer)
-        modelContext.insert(newPlayer)
-        newPlayerName = ""
+        )
+        .navigationTitle(game.name)
     }
 }
 
-#Preview {
-    let game = Game(name: "Preview Game")
-    return GameDetailView(game: game)
-}
